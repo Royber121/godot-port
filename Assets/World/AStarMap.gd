@@ -1,16 +1,22 @@
 extends Spatial
 
 class DistanceSorter:
-    static func sort(a, b):
-        if a["distance"] < b["distance"]:
-            return true
-        return false
+	static func sort(a, b):
+		if a["distance"] < b["distance"]:
+			return true
+		return false
 
 var all_points = {}
 var all_sea_points = {}
+var sea_tiles = ["deep", "shallow_deep", "shallow_deep_curve_in", "shallow_deep_curve_out", "shallow"]
+var all_beach_points = {}
+var beach_tiles = ["beach", "beach_shallow", "beach_shallow_curve_in", 
+	"beach_shallow_curve_out", "grass_beach", "grass_beach_curve_out"]
 var all_land_points = {}
+var land_tiles = ["grass", "grass_beach_curve_in"]
 
 var as_node_sea: AStar = null
+var as_node_beach: AStar = null
 var as_node_land: AStar = null
 
 onready var grid_map = $GridMap
@@ -48,6 +54,38 @@ func is_point_index_on_land(point_index: int) -> bool:
 		return true
 	else:
 		return false
+		
+# get closest land point (usually from sea)
+func get_closest_beach_point(current_position: Vector3):
+	var from_position = v3_to_index(grid_map.world_to_map(current_position))
+	var start_id = 0
+	var index = 0
+	var distances = []
+	if from_position in all_beach_points:
+		# current_position is already on land so it returns null
+		return null
+	else:
+		var closest_point = as_node_beach.get_closest_point(current_position)
+		var closest_point_v3 = as_node_beach.get_point_position(closest_point)
+		var distance = sqrt(pow((closest_point_v3.x - current_position.x), 2) + pow((closest_point_v3.y - current_position.y), 2))
+	
+		return({"cell_index": closest_point, "position": closest_point_v3, "distance": distance})
+		
+# get closest land point (usually from sea)
+func get_closest_sea_point(current_position: Vector3):
+	var from_position = v3_to_index(grid_map.world_to_map(current_position))
+	var start_id = 0
+	var index = 0
+	var distances = []
+	if from_position in all_sea_points:
+		# current_position is already on land so it returns null
+		return null
+	else:
+		var closest_point = as_node_sea.get_closest_point(current_position)
+		var closest_point_v3 = as_node_sea.get_point_position(closest_point)
+		var distance = sqrt(pow((closest_point_v3.x - current_position.x), 2) + pow((closest_point_v3.y - current_position.y), 2))
+	
+		return({"cell_index": closest_point, "position": closest_point_v3, "distance": distance})
 	
 # get closest land point (usually from sea)
 func get_closest_land_point(current_position: Vector3):
@@ -84,22 +122,28 @@ func _ready() -> void:
 	
 	as_node_sea = AStar.new()
 	as_node_land = AStar.new()
+	as_node_beach = AStar.new()
 	# TODO: Make use of Vector3i in Godot 4.0.
 	var cells = grid_map.get_used_cells()
 	for cell in cells:
-		if _get_cell_item_name(cell) in ["deep", "shallow_curve_in"]:
+		if _get_cell_item_name(cell) in sea_tiles:
 			var index = as_node_sea.get_available_point_id()
 			as_node_sea.add_point(index, grid_map.map_to_world(cell.x, cell.y, cell.z))
 			all_sea_points[v3_to_index(cell)] = index
 			all_points[v3_to_index(cell)] = index
-		elif not _get_cell_item_name(cell) in ["deep", "shallow_curve_in"]:
+		elif _get_cell_item_name(cell) in beach_tiles:
+			var index = as_node_beach.get_available_point_id()
+			as_node_beach.add_point(index, grid_map.map_to_world(cell.x, cell.y, cell.z))
+			all_beach_points[v3_to_index(cell)] = index
+			all_points[v3_to_index(cell)] = index
+		elif _get_cell_item_name(cell) in land_tiles:
 			var index = as_node_land.get_available_point_id()
 			as_node_land.add_point(index, grid_map.map_to_world(cell.x, cell.y, cell.z))
 			all_land_points[v3_to_index(cell)] = index
 			all_points[v3_to_index(cell)] = index
 	
 	for cell in cells:
-		if _get_cell_item_name(cell) in ["deep", "shallow_curve_in"]:
+		if _get_cell_item_name(cell) in sea_tiles:
 			for x in [-1, 0, 1]:
 				for y in [-1, 0, 1]:
 					for z in [-1, 0, 1]:
@@ -113,7 +157,21 @@ func _ready() -> void:
 							var ind2 = all_sea_points[v3_to_index(cell + v3)]
 							if !as_node_sea.are_points_connected(ind1, ind2):
 								as_node_sea.connect_points(ind1, ind2, true)
-		elif not _get_cell_item_name(cell) in ["deep", "shallow_curve_in"]:
+		elif _get_cell_item_name(cell) in beach_tiles:
+			for x in [-1, 0, 1]:
+				for y in [-1, 0, 1]:
+					for z in [-1, 0, 1]:
+						var v3 = Vector3(x, y, z)
+						
+						if v3 == Vector3():
+							continue
+						
+						if v3_to_index(v3 + cell) in all_beach_points:
+							var ind1 = all_beach_points[v3_to_index(cell)]
+							var ind2 = all_beach_points[v3_to_index(cell + v3)]
+							if !as_node_beach.are_points_connected(ind1, ind2):
+								as_node_beach.connect_points(ind1, ind2, true)
+		elif _get_cell_item_name(cell) in land_tiles:
 			for x in [-1, 0, 1]:
 				for y in [-1, 0, 1]:
 					for z in [-1, 0, 1]:
